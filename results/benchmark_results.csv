@@ -1,0 +1,36 @@
+"""Simple TFLite latency and FPS benchmark."""
+from pathlib import Path
+import time
+import numpy as np
+import tensorflow as tf
+MODEL_DIR = Path("models")
+INPUT_SHAPE = (1, 32, 32, 3)
+WARMUP_RUNS = 10
+BENCHMARK_RUNS = 100
+
+def benchmark(path):
+    interpreter = tf.lite.Interpreter(model_path=str(path))
+    interpreter.allocate_tensors()
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+    input_index = input_details[0]["index"]
+    dummy_input = np.random.random_sample(INPUT_SHAPE).astype(np.float32)
+    for _ in range(WARMUP_RUNS):
+        interpreter.set_tensor(input_index, dummy_input); interpreter.invoke()
+    start = time.perf_counter()
+    for _ in range(BENCHMARK_RUNS):
+        interpreter.set_tensor(input_index, dummy_input)
+        interpreter.invoke()
+        interpreter.get_tensor(output_details[0]["index"])
+    elapsed = time.perf_counter() - start
+    latency = elapsed / BENCHMARK_RUNS
+    return latency, 1.0 / latency, path.stat().st_size / 1024**2
+
+if __name__ == "__main__":
+    for name in ("cnn", "vit"):
+        path = MODEL_DIR / f"{name}.tflite"
+        if not path.exists():
+            print(f"Missing {path}. Run optimization/tflite_convert.py first.")
+            continue
+        latency, fps, size = benchmark(path)
+        print(f"{name.upper()}: latency={latency:.6f}s, FPS={fps:.2f}, size={size:.4f} MB")
